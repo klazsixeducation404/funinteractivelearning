@@ -36,6 +36,9 @@
     background:var(--lembut);color:var(--dakwat);box-shadow:0 3px 0 rgba(43,35,80,.15)}
   button:active{transform:translateY(2px);box-shadow:0 1px 0 rgba(43,35,80,.15)}
   button.utama{background:var(--kuning);box-shadow:0 5px 0 var(--kuning-gelap);font-size:1.5rem;padding:16px 30px;border-radius:20px;width:100%}
+  button.ungu{background:#B892FF;box-shadow:0 5px 0 #8A63D2;color:#fff}
+  .mula{display:grid;grid-template-columns:1fr 1fr;gap:14px}
+  @media (max-width:640px){.mula{grid-template-columns:1fr}}
   button.hijau{background:var(--pudina);color:#fff}
   button.bahaya{background:#FFE3E3;color:#B42323}
   button:focus-visible,input:focus-visible,textarea:focus-visible,select:focus-visible{outline:3px solid var(--anggur);outline-offset:2px}
@@ -145,7 +148,7 @@
       <input id="goal" type="range" min="2" max="15">
     </div>
 
-    <button class="utama" id="btnMula">▶ Mula main</button>
+    <div class="mula"><button class="utama" id="btnMula">▶ Mula main</button><button class="utama ungu" id="btnPapan">✏️ Papan tulis</button></div>
   </div>
 </div>
 
@@ -187,7 +190,7 @@
 
   // ---------- Simpanan dalam pelayar ----------
   const KEY = 'baling-jawi-v4';
-  const S = { thr: 30, frac: 30, hold: 200, slots: 5, goal: 5, cara: 'sentuh', corners: [], games: CONTOH, pilih: 'c1' };
+  const S = { thr: 30, frac: 30, hold: 100, slots: 5, goal: 5, cara: 'sentuh', corners: [], games: CONTOH, pilih: 'c1' };
   try {
     for (const k of ['baling-jawi-v2', 'baling-jawi-v3']) {       // kekalkan penjuru versi lama
       const lama = JSON.parse(localStorage.getItem(k) || '{}');
@@ -196,6 +199,7 @@
     Object.assign(S, JSON.parse(localStorage.getItem(KEY) || '{}'));
   } catch (e) {}
   if (!Array.isArray(S.games) || !S.games.length) S.games = CONTOH;
+  if (!S.v5) { S.hold = 100; S.v5 = true; }          // nilai lalai baharu: tindak balas lebih pantas
   const simpan = () => { try { localStorage.setItem(KEY, JSON.stringify(S)); } catch (e) {} };
   const gameDipilih = () => S.games.find(x => x.id === S.pilih) || S.games[0];
 
@@ -296,14 +300,14 @@
   // =====================================================================
   const GW = 96, GH = 54, N = GW * GH;               // skrin dibahagi kepada grid 96 x 54 sel
   const map = new Int32Array(N).fill(-1), sm = new Float32Array(N);
-  const SETTLE = 1000;                                // ms menunggu sasaran baharu muncul dalam kamera
-  let PW = 0, PH = 0, mapReady = false, smInit = false;
+  const SETTLE = 750;                                // ms menunggu sasaran baharu muncul dalam kamera
+  let PW = 0, PH = 0, mapReady = false, smInit = false, Hinv = null;
 
-  async function startCam() {
+  async function startCam(facing) {
     try {
       if (vid.srcObject) vid.srcObject.getTracks().forEach(t => t.stop());
       const id = $('cam').value;
-      const video = id ? { deviceId: { exact: id } } : { facingMode: { ideal: 'environment' } };   // kamera belakang pada tablet
+      const video = id ? { deviceId: { exact: id } } : { facingMode: { ideal: facing === 'user' ? 'user' : 'environment' } };   // kamera belakang pada tablet
       Object.assign(video, { width: { ideal: 640 }, height: { ideal: 480 } });
       vid.srcObject = await navigator.mediaDevices.getUserMedia({ video, audio: false });
       await vid.play();
@@ -351,6 +355,10 @@
     if (Math.abs(den) > 1e-9) { gg = (sx * dy2 - dx2 * sy) / den; hh = (dx1 * sy - sx * dy1) / den; }
     const a = p[1].x - p[0].x + gg * p[1].x, b = p[3].x - p[0].x + hh * p[3].x, c = p[0].x;
     const d = p[1].y - p[0].y + gg * p[1].y, e = p[3].y - p[0].y + hh * p[3].y, f = p[0].y;
+    // Songsangan matriks (kamera -> skrin), digunakan oleh papan tulis untuk kedudukan jari
+    const det = a * (e - f * hh) - b * (d - f * gg) + c * (d * hh - e * gg);
+    Hinv = Math.abs(det) < 1e-12 ? null : [(e - f * hh) / det, (c * hh - b) / det, (b * f - c * e) / det,
+      (f * gg - d) / det, (a - c * gg) / det, (c * d - a * f) / det, (d * hh - e * gg) / det, (b * gg - a * hh) / det, (a * e - b * d) / det];
     for (let gy = 0; gy < GH; gy++) for (let gx = 0; gx < GW; gx++) {
       const u = (gx + .5) / GW, v = (gy + .5) / GH, w = gg * u + hh * v + 1;
       const xi = Math.round((a * u + b * v + c) / w), yi = Math.round((d * u + e * v + f) / w);
@@ -369,7 +377,7 @@
     slots.forEach(s => { if (s.b) { s.b.ref = null; s.b.readyAt = now + SETTLE; s.b.since = null; s.b.cov = 0; s.b.wait = false; } });
   }
   function processFrame() {
-    if (!mapReady || S.cara !== 'kamera') return;
+    if (!mapReady || S.cara !== 'kamera' || papan.aktif) return;
     pc.drawImage(vid, 0, 0, PW, PH);
     const d = pc.getImageData(0, 0, PW, PH).data, row = PW * 4;
     for (let i = 0; i < N; i++) {                     // purata 2x2 piksel + pelicinan masa
@@ -377,7 +385,7 @@
       if (k < 0) { sm[i] = 0; continue; }
       const v = (d[k] + 2 * d[k + 1] + d[k + 2] + d[k + 4] + 2 * d[k + 5] + d[k + 6] +
                  d[k + row] + 2 * d[k + row + 1] + d[k + row + 2] + d[k + row + 4] + 2 * d[k + row + 5] + d[k + row + 6]) / 16;
-      sm[i] = smInit ? sm[i] * 0.5 + v * 0.5 : v;
+      sm[i] = smInit ? sm[i] * 0.3 + v * 0.7 : v;
     }
     smInit = true;
     const now = performance.now(), need = S.frac / 100, thr = S.thr, ready = [];
@@ -408,7 +416,10 @@
     let best = null;
     for (const s of slots) {
       const b = s.b;
-      if (b && b.ref && !b.wait && b.since !== null && now - b.since >= S.hold && (!best || b.cov > best.b.cov)) best = s;
+      if (!b || !b.ref || b.wait || b.since === null) continue;
+      // Liputan yang sangat jelas (cth. bola tepat di tengah) dikira lebih cepat daripada liputan sipi
+      const tahan = b.cov >= Math.min(0.9, need * 1.8) ? S.hold / 3 : S.hold;
+      if (now - b.since >= tahan && (!best || b.cov > best.b.cov)) best = s;
     }
     if (best) hitTarget(best);
   }
@@ -490,7 +501,7 @@
     qi = i; Q = buildQuestion(i); hits = 0; target = null; banner = 0; nextQAt = 0;
     layout();
     if (Q.single) target = rand(Q.C);
-    slots.forEach(spawn);
+    slots.map(s => [Math.random(), s]).sort((a, b) => a[0] - b[0]).forEach(x => spawn(x[1]));   // isi slot ikut tertib rawak
     quietUntil = performance.now() + SETTLE + 300;
   }
   function startGame() {
@@ -507,17 +518,17 @@
   }
   function hitTarget(s) {
     const b = s.b, now = performance.now(); if (!b || banner) return;
-    quietUntil = now + 900;
+    quietUntil = now + 600;
     if (isCorrect(b)) {
       confetti(b.x, b.y, 22, R * 4);
-      s.b = null; s.next = now + 1500;                // sasaran baharu selepas tangan/bola beredar
+      s.b = null; s.next = now + 1000;                // sasaran baharu selepas tangan/bola beredar
       stars++; hits++;
       if (gm.soalan.length > 1 && hits >= S.goal) {   // soalan selesai: raikan, kemudian soalan seterusnya
         banner = now; nextQAt = now + 2200; quietUntil = now + 4000; sound('tamat');
         for (let i = 0; i < 6; i++) confetti(W * (0.15 + 0.14 * i), H * .45, 14, R * 5);
       } else { if (Q.single) chooseTarget(); sound('betul'); }
     } else {
-      b.badUntil = now + 700; b.wait = true; b.since = null; sound('salah');
+      b.badUntil = now + 900; b.wait = true; b.since = null; sound('salah');
     }
   }
   function sound(kind) {
@@ -581,7 +592,7 @@
     const x = b.x + (bad ? Math.sin(now / 25) * r * .08 : 0), y = b.y;
     const pop = Math.min(1, (now - b.born) / 250), sc = 0.6 + 0.4 * pop;      // muncul dengan kesan membesar
     g.save(); g.translate(x, y); g.scale(sc, sc);
-    const col = bad ? '#C9C6D9' : b.c;
+    const col = bad ? '#F03A3A' : b.c;
     if (tema === 'belon') {
       g.strokeStyle = 'rgba(43,35,80,.45)'; g.lineWidth = 3;
       g.beginPath(); g.moveTo(0, r); g.quadraticCurveTo(r * .2, r * 1.25, 0, r * 1.5); g.stroke();
@@ -603,10 +614,10 @@
     } else {                                           // taman: bunga
       g.fillStyle = col;
       for (let i = 0; i < 9; i++) { const a = i / 9 * Math.PI * 2; g.beginPath(); g.arc(Math.cos(a) * r * .78, Math.sin(a) * r * .78, r * .3, 0, 7); g.fill(); }
-      g.fillStyle = bad ? '#E4E2EE' : '#FFF3B0'; g.beginPath(); g.arc(0, 0, r * .74, 0, 7); g.fill();
+      g.fillStyle = bad ? '#F03A3A' : '#FFF3B0'; g.beginPath(); g.arc(0, 0, r * .74, 0, 7); g.fill();
     }
     // Teks jawapan, dikecilkan automatik supaya muat
-    g.fillStyle = '#2B2350'; g.textAlign = 'center'; g.textBaseline = 'middle';
+    g.fillStyle = bad ? '#FFFFFF' : '#2B2350'; g.textAlign = 'center'; g.textBaseline = 'middle';
     let fs = r * 0.95; g.font = '600 ' + fs + 'px ' + FON;
     const w = g.measureText(b.ans).width, maxW = r * 1.25;
     if (w > maxW) { fs *= maxW / w; g.font = '600 ' + fs + 'px ' + FON; }
@@ -685,17 +696,198 @@
     W = innerWidth; H = innerHeight; HH = Math.round(H * 0.2);
     game.width = W * dpr; game.height = H * dpr;
     g.setTransform(dpr, 0, 0, dpr, 0, 0);
-    if (gm) { makeBg(); startQuestion(qi); }
+    if (papan.aktif) papanResize();
+    else if (gm) { makeBg(); startQuestion(qi); }
   }
   addEventListener('resize', resize);
 
   let lastT = performance.now();
   function frame(now) {
     const dt = Math.min(0.05, (now - lastT) / 1000); lastT = now;
-    if (home.hidden) { update(dt, now); draw(now); }
+    if (home.hidden && papan.aktif) papanFrame(now);
+    else if (home.hidden) { update(dt, now); draw(now); }
     else if (S.cara === 'kamera') drawPreview();
     requestAnimationFrame(frame);
   }
+
+  // =====================================================================
+  //  PAPAN TULIS: tulis dengan jari telunjuk (MediaPipe), sentuhan atau tetikus
+  // =====================================================================
+  const MP_VER = '0.10.14';
+  const MP_URL = 'https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@' + MP_VER + '/vision_bundle.mjs';
+  const MP_WASM = 'https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@' + MP_VER + '/wasm';
+  const MP_MODEL = 'https://storage.googleapis.com/mediapipe-models/hand_landmarker/hand_landmarker/float16/1/hand_landmarker.task';
+  const WARNA_PEN = ['#2B2350', '#E63946', '#1F9E68', '#2D7FF9', '#FF9F1C'];
+  const papan = { aktif: false, ink: null, ictx: null, warna: WARNA_PEN[0], saiz: 1, alat: 'pen', garis: true, surih: '',
+                  jari: false, hl: null, memuat: false, status: '', cur: null, pen: false, last: null, miss: 0, ok: 0,
+                  nampak: false, dwell: null, lastVT: -1, btns: [], BH: 80, ptr: {} };
+
+  function papanResize() {
+    const lama = papan.ink;
+    papan.ink = document.createElement('canvas'); papan.ink.width = W * dpr; papan.ink.height = H * dpr;
+    papan.ictx = papan.ink.getContext('2d');
+    if (lama) papan.ictx.drawImage(lama, 0, 0, papan.ink.width, papan.ink.height);   // kekalkan tulisan
+    papan.ictx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    papan.ictx.lineCap = 'round'; papan.ictx.lineJoin = 'round';
+    const BH = papan.BH = Math.max(64, Math.round(H * 0.12));
+    const defs = WARNA_PEN.map(c => ({ jenis: 'warna', v: c }))
+      .concat([0, 1, 2].map(i => ({ jenis: 'saiz', v: i })),
+              [{ jenis: 'padam', t: '🧽' }, { jenis: 'garis', t: '☰' }, { jenis: 'surih', t: 'أ' }, { jenis: 'kosong', t: '🗑️' }, { jenis: 'jari', t: '☝️' }]);
+    const ruang = W - BH * 1.3 - 16, gap = Math.min(10, ruang / defs.length * 0.12);
+    const bs = Math.min(BH * 0.76, ruang / defs.length - gap);
+    papan.btns = defs.map((d, i) => Object.assign(d, { x: 12 + i * (bs + gap), y: (BH - bs) / 2, s: bs }));
+    if (papan.saizIdx === undefined) papan.saizIdx = 1;
+  }
+  const saizPx = () => [0.007, 0.013, 0.024][papan.saizIdx] * H;
+
+  function papanAksi(b) {
+    if (b.jenis === 'warna') { papan.warna = b.v; papan.alat = 'pen'; }
+    else if (b.jenis === 'saiz') papan.saizIdx = b.v;
+    else if (b.jenis === 'padam') papan.alat = papan.alat === 'padam' ? 'pen' : 'padam';
+    else if (b.jenis === 'garis') papan.garis = !papan.garis;
+    else if (b.jenis === 'kosong') papan.ictx.clearRect(0, 0, W, H);
+    else if (b.jenis === 'surih') {
+      const t = prompt('Tulis huruf atau perkataan untuk disurih (kosongkan untuk buang):', papan.surih);
+      if (t !== null) papan.surih = t.trim();
+    } else if (b.jenis === 'jari') papanJari();
+  }
+  const btnAt = (x, y) => papan.btns.find(b => x >= b.x && x <= b.x + b.s && y >= b.y && y <= b.y + b.s);
+
+  function seg(a, b) {                                // lukis satu ruas tulisan (atau padam)
+    const c = papan.ictx;
+    c.globalCompositeOperation = papan.alat === 'padam' ? 'destination-out' : 'source-over';
+    c.strokeStyle = papan.warna; c.lineWidth = papan.alat === 'padam' ? saizPx() * 5 : saizPx();
+    c.beginPath(); c.moveTo(a.x, a.y); c.lineTo(b.x, b.y); c.stroke();
+    c.globalCompositeOperation = 'source-over';
+  }
+
+  // Hidupkan/matikan pengesan tangan. Model dimuat turun sekali dari internet (beberapa MB).
+  async function papanJari() {
+    if (papan.jari) { papan.jari = false; papan.cur = null; papan.status = ''; return; }
+    if (papan.memuat) return;
+    papan.memuat = true; papan.status = 'Memuatkan pengecam tangan...';
+    try {
+      if (!vid.srcObject) await startCam(S.cara === 'kamera' ? 'environment' : 'user');
+      if (!vid.srcObject) throw new Error('kamera tidak dapat dibuka');
+      if (!papan.hl) {
+        const v = await import(MP_URL);
+        const fs = await v.FilesetResolver.forVisionTasks(MP_WASM);
+        const opt = d => ({ baseOptions: { modelAssetPath: MP_MODEL, delegate: d }, runningMode: 'VIDEO', numHands: 1,
+                            minHandDetectionConfidence: 0.4, minHandPresenceConfidence: 0.4, minTrackingConfidence: 0.4 });
+        try { papan.hl = await v.HandLandmarker.createFromOptions(fs, opt('GPU')); }
+        catch (e) { papan.hl = await v.HandLandmarker.createFromOptions(fs, opt('CPU')); }
+      }
+      papan.jari = true; papan.status = '';
+    } catch (e) { papan.status = 'Pengecam tangan gagal: ' + (e.message || e.name) + '. Perlukan internet.'; }
+    papan.memuat = false;
+  }
+
+  function papanJejak(now) {                          // satu langkah pengesanan tangan
+    if (!papan.jari || !papan.hl || vid.readyState < 2 || vid.currentTime === papan.lastVT) return;
+    papan.lastVT = vid.currentTime;
+    let lm = null;
+    try { const res = papan.hl.detectForVideo(vid, now); lm = res.landmarks && res.landmarks[0]; } catch (e) { return; }
+    let p = null, tunjuk = false;
+    if (lm) {
+      const d = (i, j) => Math.hypot(lm[i].x - lm[j].x, lm[i].y - lm[j].y);
+      // "Nombor satu": telunjuk lurus (hujung jauh dari pergelangan), tiga jari lain tidak lurus
+      const telunjuk = d(0, 8) > d(0, 6) * 1.15;
+      const lain = [[12, 10], [16, 14], [20, 18]].filter(([t, q]) => d(0, t) > d(0, q) * 1.3).length;
+      tunjuk = telunjuk && lain === 0;
+      let u, v;
+      if (S.cara === 'kamera' && mapReady && Hinv) {  // kamera hadap dinding: guna kalibrasi 4 penjuru
+        const x = lm[8].x * PW, y = lm[8].y * PH, w = Hinv[6] * x + Hinv[7] * y + Hinv[8];
+        u = (Hinv[0] * x + Hinv[1] * y + Hinv[2]) / w; v = (Hinv[3] * x + Hinv[4] * y + Hinv[5]) / w;
+      } else {                                        // kamera hadap pengguna: cermin, dengan sedikit jidar
+        u = (1 - lm[8].x - 0.12) / 0.76; v = (lm[8].y - 0.12) / 0.76;
+      }
+      if (u > -0.05 && u < 1.05 && v > -0.05 && v < 1.05) p = { x: Math.min(1, Math.max(0, u)) * W, y: Math.min(1, Math.max(0, v)) * H };
+    }
+    papan.nampak = !!p;
+    if (!p) { if (++papan.miss > 4) { papan.pen = false; papan.last = null; papan.cur = null; papan.ok = 0; } return; }
+    papan.cur = papan.cur ? { x: papan.cur.x + (p.x - papan.cur.x) * 0.5, y: papan.cur.y + (p.y - papan.cur.y) * 0.5 } : p;   // pelicinan
+    if (tunjuk) { papan.miss = 0; if (++papan.ok >= 2) papan.pen = true; }
+    else if (++papan.miss > 3) { papan.pen = false; papan.ok = 0; }
+    const c = papan.cur;
+    if (papan.pen && c.y > papan.BH) {
+      if (papan.last) seg(papan.last, c);
+      papan.last = { x: c.x, y: c.y }; papan.dwell = null;
+    } else {
+      papan.last = null;
+      const b = papan.pen ? btnAt(c.x, c.y) : null;   // tunjuk pada butang selama 0.8 saat = tekan
+      if (!b) papan.dwell = null;
+      else if (!papan.dwell || papan.dwell.b !== b) papan.dwell = { b, t: now };
+      else if (now - papan.dwell.t > 800) { if (b.jenis !== 'surih') papanAksi(b); papan.dwell = { b, t: now + 1500 }; }
+    }
+  }
+
+  function papanFrame(now) {
+    papanJejak(now);
+    const BH = papan.BH;
+    g.fillStyle = '#FFFFFF'; g.fillRect(0, 0, W, H);
+    if (papan.garis) {
+      const jarak = (H - BH) / 4;
+      for (let i = 0; i < 4; i++) {
+        const y = BH + jarak * (i + 0.72);
+        g.strokeStyle = '#BFE3FF'; g.lineWidth = 3; g.beginPath(); g.moveTo(W * .03, y); g.lineTo(W * .97, y); g.stroke();
+        g.strokeStyle = '#E4F3FF'; g.lineWidth = 2; g.setLineDash([10, 10]); g.beginPath(); g.moveTo(W * .03, y - jarak * .45); g.lineTo(W * .97, y - jarak * .45); g.stroke(); g.setLineDash([]);
+      }
+    }
+    if (papan.surih) {                                // teks pudar untuk disurih
+      g.fillStyle = '#E3E0F2'; g.textAlign = 'center'; g.textBaseline = 'middle';
+      let fs = (H - BH) * 0.6; g.font = '600 ' + fs + 'px ' + FON;
+      const w = g.measureText(papan.surih).width;
+      if (w > W * 0.86) { fs *= W * 0.86 / w; g.font = '600 ' + fs + 'px ' + FON; }
+      g.fillText(papan.surih, W / 2, BH + (H - BH) / 2);
+    }
+    g.drawImage(papan.ink, 0, 0, W, H);
+
+    // Bar alat
+    g.fillStyle = '#F4F1FF'; g.fillRect(0, 0, W, BH);
+    g.fillStyle = 'rgba(43,35,80,.12)'; g.fillRect(0, BH, W, 4);
+    g.textAlign = 'center'; g.textBaseline = 'middle';
+    for (const b of papan.btns) {
+      const pilih = (b.jenis === 'warna' && papan.alat === 'pen' && papan.warna === b.v) || (b.jenis === 'saiz' && papan.saizIdx === b.v) ||
+                    (b.jenis === 'padam' && papan.alat === 'padam') || (b.jenis === 'garis' && papan.garis) || (b.jenis === 'jari' && papan.jari) || (b.jenis === 'surih' && papan.surih);
+      g.fillStyle = '#FFFFFF'; roundRect(b.x, b.y, b.s, b.s, b.s * .28); g.fill();
+      if (pilih) { g.strokeStyle = '#2FCB8A'; g.lineWidth = Math.max(3, b.s * .08); roundRect(b.x, b.y, b.s, b.s, b.s * .28); g.stroke(); }
+      const cx = b.x + b.s / 2, cy = b.y + b.s / 2;
+      if (b.jenis === 'warna') { g.fillStyle = b.v; g.beginPath(); g.arc(cx, cy, b.s * .3, 0, 7); g.fill(); }
+      else if (b.jenis === 'saiz') { g.fillStyle = '#2B2350'; g.beginPath(); g.arc(cx, cy, b.s * [.08, .15, .24][b.v], 0, 7); g.fill(); }
+      else { g.fillStyle = '#2B2350'; g.font = '600 ' + Math.floor(b.s * .5) + 'px ' + FON; g.fillText(b.t, cx, cy + b.s * .03); }
+    }
+    // Status dan kursor jari
+    const st = papan.status || (papan.jari ? (!papan.nampak ? 'Tangan tidak dikesan' : papan.pen ? '☝️ Menulis' : '✋ Angkat jari telunjuk untuk menulis') : '');
+    if (st) { g.font = '500 ' + Math.floor(H * .03) + 'px ' + FON; g.textAlign = 'left'; g.textBaseline = 'alphabetic'; g.fillStyle = '#6A648C'; g.fillText(st, W * .02, H * .975); }
+    const c = papan.cur;
+    if (papan.jari && c) {
+      const rr = Math.max(10, saizPx());
+      if (papan.pen) { g.fillStyle = papan.alat === 'padam' ? '#C9C6D9' : papan.warna; g.beginPath(); g.arc(c.x, c.y, rr * .7, 0, 7); g.fill(); }
+      g.strokeStyle = '#2B2350'; g.lineWidth = 3; g.beginPath(); g.arc(c.x, c.y, rr * 1.3, 0, 7); g.stroke();
+      if (papan.dwell && now > papan.dwell.t) {
+        g.strokeStyle = '#2FCB8A'; g.lineWidth = 6; g.beginPath(); g.arc(c.x, c.y, rr * 2, -Math.PI / 2, -Math.PI / 2 + Math.PI * 2 * Math.min(1, (now - papan.dwell.t) / 800)); g.stroke();
+      }
+    }
+  }
+
+  function papanMula() {
+    papan.aktif = true; home.hidden = true; gear.hidden = false;
+    papanResize();
+    const de = document.documentElement;
+    if (!document.fullscreenElement && de.requestFullscreen) de.requestFullscreen().catch(() => {});
+  }
+  // Tulis dengan sentuhan atau tetikus (berbilang jari disokong)
+  game.addEventListener('pointerdown', e => {
+    if (!papan.aktif) return;
+    const b = e.clientY < papan.BH ? btnAt(e.clientX, e.clientY) : null;
+    if (b) { papanAksi(b); return; }
+    if (e.clientY >= papan.BH) { papan.ptr[e.pointerId] = { x: e.clientX, y: e.clientY }; seg(papan.ptr[e.pointerId], papan.ptr[e.pointerId]); }
+  });
+  game.addEventListener('pointermove', e => {
+    const a = papan.ptr[e.pointerId]; if (!papan.aktif || !a) return;
+    const b = { x: e.clientX, y: Math.max(papan.BH, e.clientY) }; seg(a, b); papan.ptr[e.pointerId] = b;
+  });
+  ['pointerup', 'pointercancel', 'pointerleave'].forEach(n => game.addEventListener(n, e => { delete papan.ptr[e.pointerId]; }));
 
   // =====================================================================
   //  KAWALAN
@@ -703,12 +895,12 @@
   function goPlay() {
     if (!ac) { try { ac = new (window.AudioContext || window.webkitAudioContext)(); } catch (e) {} }
     if (ac && ac.state === 'suspended') ac.resume();
-    home.hidden = true; gear.hidden = false;
+    papan.aktif = false; home.hidden = true; gear.hidden = false;
     startGame();
     const de = document.documentElement;
     if (!document.fullscreenElement && de.requestFullscreen) de.requestFullscreen().catch(() => {});
   }
-  function goHome() { home.hidden = false; gear.hidden = true; renderGames(); }
+  function goHome() { papan.aktif = false; home.hidden = false; gear.hidden = true; renderGames(); }
   $('btnMula').onclick = () => {
     if (!$('editor').hidden) { alert('Simpan atau batalkan suntingan dahulu.'); return; }
     if (S.cara === 'kamera' && (!vid.srcObject || S.corners.length < 4) &&
@@ -716,10 +908,11 @@
     goPlay();
   };
   gear.onclick = goHome;
+  $('btnPapan').onclick = papanMula;
   document.addEventListener('fullscreenchange', () => { rearm(); quietUntil = performance.now() + SETTLE + 400; });
 
   game.addEventListener('pointerdown', e => {         // sentuhan skrin atau klik tetikus
-    if (!home.hidden) return;
+    if (!home.hidden || papan.aktif) return;
     marker = { x: e.clientX, y: e.clientY, t: performance.now() };
     let best = null, bd = Infinity;
     for (const s of slots) {
@@ -734,7 +927,7 @@
     const k = e.key.toLowerCase();
     if (k === 't') { home.hidden ? goHome() : null; }
     else if (k === 'f') { document.fullscreenElement ? document.exitFullscreen() : document.documentElement.requestFullscreen().catch(() => {}); }
-    else if (k === 'r' && home.hidden) startGame();
+    else if (k === 'r' && home.hidden && !papan.aktif) startGame();
   });
 
   syncSliders(); renderGames(); renderCara(); resize(); requestAnimationFrame(frame);
