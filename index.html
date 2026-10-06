@@ -1,0 +1,472 @@
+<!DOCTYPE html>
+<html lang="ms">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Baling Jawi</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Noto+Naskh+Arabic:wght@600&display=swap" rel="stylesheet">
+<style>
+  :root{--dakwat:#0E2440;--kertas:#FFFFFF;--kuning:#FFC93C;--garis:#D5DDE8}
+  *{box-sizing:border-box}
+  html,body{margin:0;height:100%;background:#102C54;overflow:hidden;
+    font-family:"Nunito","Arial Rounded MT Bold","Segoe UI",system-ui,sans-serif;color:var(--dakwat)}
+  #game{position:fixed;inset:0;width:100%;height:100%;display:block;cursor:crosshair}
+  #panel{position:fixed;left:50%;top:50%;transform:translate(-50%,-50%);
+    width:min(880px,74vw);max-height:76vh;overflow:auto;background:var(--kertas);
+    border-radius:18px;padding:22px 24px;display:grid;grid-template-columns:1.1fr 1fr;gap:22px}
+  #panel[hidden]{display:none}
+  h1{margin:0 0 4px;font-size:1.5rem;line-height:1.2}
+  p{margin:0 0 10px;line-height:1.45;font-size:.92rem}
+  ol{margin:0;padding-left:1.2em;font-size:.92rem;line-height:1.45}
+  ol li{margin-bottom:12px}
+  #pv{width:100%;aspect-ratio:4/3;background:#0b1a2c;border-radius:10px;display:block;cursor:crosshair}
+  #status{font-size:.9rem;font-weight:700;margin-top:8px;min-height:2.6em}
+  label{display:block;font-size:.85rem;margin:10px 0 2px}
+  label output{float:right;font-variant-numeric:tabular-nums}
+  input[type=range]{width:100%}
+  select{width:100%;padding:7px;border:1px solid var(--garis);border-radius:8px;font:inherit;margin:4px 0}
+  button{font:inherit;font-weight:700;border:0;border-radius:10px;padding:9px 14px;cursor:pointer;
+    background:#E8EEF6;color:var(--dakwat);margin:4px 4px 0 0}
+  button.utama{background:var(--kuning);font-size:1.05rem;padding:12px 20px}
+  button:focus-visible,select:focus-visible,input:focus-visible{outline:3px solid #2D7FF9;outline-offset:2px}
+  .kekunci{font-size:.8rem;color:#4A5B72;margin-top:12px}
+  kbd{background:#E8EEF6;border-radius:5px;padding:1px 6px;font:inherit;font-weight:700}
+  @media (max-width:760px){#panel{grid-template-columns:1fr;width:94vw;max-height:92vh}}
+</style>
+</head>
+<body>
+<canvas id="game"></canvas>
+
+<div id="panel">
+  <div>
+    <canvas id="pv" width="480" height="360"></canvas>
+    <div id="status">Langkah 1: klik "Hidupkan kamera".</div>
+    <button id="btnReset">Tanda semula penjuru</button>
+  </div>
+  <div>
+    <h1>Baling Jawi</h1>
+    <p>Sentuh atau baling bola pada belon yang membawa huruf yang diminta.</p>
+    <ol>
+      <li>Pilih kamera, kemudian hidupkan.
+        <select id="cam"><option value="">Kamera lalai</option></select>
+        <button id="btnCam">Hidupkan kamera</button>
+      </li>
+      <li>Dalam paparan kamera di sebelah, klik 4 penjuru tayangan mengikut nombor di dinding: 1, 2, 3, 4.</li>
+      <li>Laras jika perlu.
+        <label>Ambang perubahan (rendah = lebih sensitif) <output id="oThr"></output></label>
+        <input id="thr" type="range" min="8" max="90">
+        <label>Liputan untuk kena, % (rendah = lebih sensitif) <output id="oFrac"></output></label>
+        <input id="frac" type="range" min="5" max="60">
+        <label>Tempoh tahan, ms (tinggi = kurang tersalah kesan) <output id="oHold"></output></label>
+        <input id="hold" type="range" min="50" max="800" step="50">
+        <label>Bilangan belon <output id="oLanes"></output></label>
+        <input id="lanes" type="range" min="3" max="7">
+      </li>
+    </ol>
+    <button class="utama" id="btnMula">Mula main</button>
+    <div class="kekunci">
+      Semasa main: <kbd>T</kbd> tetapan, <kbd>F</kbd> skrin penuh, <kbd>R</kbd> mula semula,
+      <kbd>[</kbd> <kbd>]</kbd> ubah ambang. Klik tetikus pada belon untuk uji tanpa kamera.
+    </div>
+  </div>
+</div>
+
+<video id="vid" playsinline muted style="display:none"></video>
+
+<script>
+(() => {
+  const $ = id => document.getElementById(id);
+  const game = $('game'), g = game.getContext('2d');
+  const pv = $('pv'), pg = pv.getContext('2d');
+  const vid = $('vid'), panel = $('panel'), statusEl = $('status');
+  const proc = document.createElement('canvas');
+  const pc = proc.getContext('2d', { willReadFrequently: true });
+
+  // ---------- Huruf (nama rumi, huruf Jawi). Ubah senarai ini ikut keperluan. ----------
+  const LETTERS = [
+    ['Alif','ا'],['Ba','ب'],['Ta','ت'],['Sa','ث'],['Jim','ج'],['Ca','چ'],['Ha','ح'],['Kha','خ'],
+    ['Dal','د'],['Zal','ذ'],['Ra','ر'],['Zai','ز'],['Sin','س'],['Syin','ش'],['Sod','ص'],['Dhod','ض'],
+    ['Tho','ط'],['Zho','ظ'],['Ain','ع'],['Ghain','غ'],['Nga','ڠ'],['Fa','ف'],['Pa','ڤ'],['Qaf','ق'],
+    ['Kaf','ک'],['Ga','ݢ'],['Lam','ل'],['Mim','م'],['Nun','ن'],['Wau','و'],['Va','ۏ'],['Ha','ه'],
+    ['Hamzah','ء'],['Ya','ي'],['Nya','ڽ']
+  ];
+  const JAWI_FONT = '"Noto Naskh Arabic","Amiri","Segoe UI","Tahoma","Arial",sans-serif';
+  const UI_FONT = '"Nunito","Arial Rounded MT Bold","Segoe UI",sans-serif';
+  const WARNA = ['#FF6B5E', '#FFC93C', '#58D68D', '#FF8CBE', '#78BEFF', '#FFA550'];
+
+  // ---------- Tetapan (disimpan dalam pelayar) ----------
+  const KEY = 'baling-jawi-v3';
+  const S = { thr: 30, frac: 30, hold: 200, lanes: 5, corners: [] };
+  try {
+    const lama = JSON.parse(localStorage.getItem('baling-jawi-v2') || '{}');   // kekalkan penjuru versi lama
+    if (lama.corners) S.corners = lama.corners;
+    Object.assign(S, JSON.parse(localStorage.getItem(KEY) || '{}'));
+  } catch (e) {}
+  const simpan = () => { try { localStorage.setItem(KEY, JSON.stringify(S)); } catch (e) {} };
+
+  // ---------- Grid pengesanan: skrin dibahagi kepada 96 x 54 sel ----------
+  const GW = 96, GH = 54, N = GW * GH;
+  const map = new Int32Array(N).fill(-1);          // sel grid -> indeks piksel kamera
+  const mapX = new Float32Array(N), mapY = new Float32Array(N);
+  const sm = new Float32Array(N);
+  const SETTLE = 1000;      // ms menunggu belon baharu muncul dalam kamera sebelum ambil rujukan
+  let PW = 0, PH = 0, mapReady = false, smInit = false;
+
+  let W = 0, H = 0, HH = 0, dpr = 1, quietUntil = 0, ac = null;
+  let lanes = [], shards = [], score = 0, streak = 0, target = LETTERS[1], marker = null;
+
+  // ---------- Saiz skrin ----------
+  function resize() {
+    dpr = window.devicePixelRatio || 1;
+    W = innerWidth; H = innerHeight; HH = Math.round(H * 0.2);
+    game.width = W * dpr; game.height = H * dpr;
+    g.setTransform(dpr, 0, 0, dpr, 0, 0);
+    resetGame();
+  }
+  addEventListener('resize', resize);
+  const radius = () => Math.min((W / S.lanes) * 0.40, (H - HH) * 0.24);
+
+  // ---------- Kamera ----------
+  async function startCam() {
+    try {
+      if (vid.srcObject) vid.srcObject.getTracks().forEach(t => t.stop());
+      const id = $('cam').value;
+      const stream = await navigator.mediaDevices.getUserMedia({
+        video: { deviceId: id ? { exact: id } : undefined, width: { ideal: 640 }, height: { ideal: 480 } },
+        audio: false
+      });
+      vid.srcObject = stream;
+      await vid.play();
+      PW = 256; PH = Math.round(256 * vid.videoHeight / vid.videoWidth);
+      proc.width = PW; proc.height = PH;
+      pv.height = Math.round(pv.width * vid.videoHeight / vid.videoWidth);
+      pv.style.aspectRatio = vid.videoWidth + '/' + vid.videoHeight;
+      await listCams(id);
+      buildMap(); setStatus(); loopVideo();
+    } catch (e) {
+      statusEl.textContent = 'Kamera tidak dapat dibuka (' + e.name + '). Benarkan akses kamera dalam pelayar, dan pastikan halaman dibuka melalui https.';
+    }
+  }
+  async function listCams(current) {
+    const devs = (await navigator.mediaDevices.enumerateDevices()).filter(d => d.kind === 'videoinput');
+    const sel = $('cam'); sel.innerHTML = '';
+    devs.forEach((d, i) => {
+      const o = document.createElement('option');
+      o.value = d.deviceId; o.textContent = d.label || 'Kamera ' + (i + 1);
+      sel.appendChild(o);
+    });
+    if (current) sel.value = current;
+  }
+  function setStatus() {
+    if (!vid.srcObject) { statusEl.textContent = 'Langkah 1: klik "Hidupkan kamera".'; return; }
+    const n = S.corners.length;
+    statusEl.textContent = n < 4
+      ? 'Langkah 2: klik penjuru ' + (n + 1) + ' tayangan dalam paparan kamera di atas.'
+      : 'Sedia. Klik "Mula main".';
+  }
+
+  // ---------- Pemetaan skrin -> kamera (homografi segi empat) ----------
+  function buildMap() {
+    mapReady = false;
+    if (S.corners.length < 4 || !PW) return;
+    const p = S.corners.map(c => ({ x: c.x * PW, y: c.y * PH }));
+    const dx1 = p[1].x - p[2].x, dx2 = p[3].x - p[2].x, sx = p[0].x - p[1].x + p[2].x - p[3].x;
+    const dy1 = p[1].y - p[2].y, dy2 = p[3].y - p[2].y, sy = p[0].y - p[1].y + p[2].y - p[3].y;
+    const den = dx1 * dy2 - dy1 * dx2;
+    let gg = 0, hh = 0;
+    if (Math.abs(den) > 1e-9) { gg = (sx * dy2 - dx2 * sy) / den; hh = (dx1 * sy - sx * dy1) / den; }
+    const a = p[1].x - p[0].x + gg * p[1].x, b = p[3].x - p[0].x + hh * p[3].x, c = p[0].x;
+    const d = p[1].y - p[0].y + gg * p[1].y, e = p[3].y - p[0].y + hh * p[3].y, f = p[0].y;
+    for (let gy = 0; gy < GH; gy++) for (let gx = 0; gx < GW; gx++) {
+      const u = (gx + .5) / GW, v = (gy + .5) / GH, w = gg * u + hh * v + 1;
+      const x = (a * u + b * v + c) / w, y = (d * u + e * v + f) / w, i = gy * GW + gx;
+      const xi = Math.round(x), yi = Math.round(y);
+      map[i] = (xi < 0 || yi < 0 || xi >= PW - 1 || yi >= PH - 1) ? -1 : (yi * PW + xi) * 4;
+      mapX[i] = x / PW; mapY[i] = y / PH;
+    }
+    mapReady = true; smInit = false; rearm();
+  }
+
+  // ---------- Pengesanan ----------
+  // Belon PEGUN. Sebaik belon muncul, kamera merakam rupa tengah belon itu sebagai RUJUKAN.
+  // Jika tangan atau bola menutup sebahagian tengah belon, rupanya berubah berbanding rujukan = kena.
+  function rearm() {                               // ambil semula rujukan semua belon
+    const now = performance.now();
+    lanes.forEach(L => { if (L.b) { L.b.ref = null; L.b.readyAt = now + SETTLE; L.b.since = null; L.b.cov = 0; L.b.wait = false; } });
+  }
+
+  function processFrame() {
+    if (!mapReady) return;
+    pc.drawImage(vid, 0, 0, PW, PH);
+    const d = pc.getImageData(0, 0, PW, PH).data, row = PW * 4;
+    // Purata 2x2 piksel dan pelicinan masa: kurangkan hingar kamera dan kelipan projektor
+    for (let i = 0; i < N; i++) {
+      const k = map[i];
+      if (k < 0) { sm[i] = 0; continue; }
+      const v = (d[k] + 2 * d[k + 1] + d[k + 2] + d[k + 4] + 2 * d[k + 5] + d[k + 6] +
+                 d[k + row] + 2 * d[k + row + 1] + d[k + row + 2] + d[k + row + 4] + 2 * d[k + row + 5] + d[k + row + 6]) / 16;
+      sm[i] = smInit ? sm[i] * 0.5 + v * 0.5 : v;
+    }
+    smInit = true;
+
+    const now = performance.now(), need = S.frac / 100, thr = S.thr;
+    const ready = [];
+    for (const L of lanes) {
+      const b = L.b; if (!b || now < b.readyAt) continue;
+      const cells = b.cells, n = cells.length;
+      if (!b.ref) { b.ref = new Float32Array(n); for (let j = 0; j < n; j++) b.ref[j] = sm[cells[j]]; continue; }
+      let sum = 0;
+      for (let j = 0; j < n; j++) sum += sm[cells[j]] - b.ref[j];
+      b.shift = n ? sum / n : 0;
+      ready.push(b);
+    }
+    // Anjakan kecerahan sepunya (dedahan automatik kamera): median merentas semua belon.
+    // Satu belon yang disentuh tidak mengubah median, jadi hanya perubahan SETEMPAT yang dikira.
+    let gshift = 0;
+    if (ready.length >= 3) {
+      const ms = ready.map(b => b.shift).sort((x, y) => x - y);
+      gshift = ms[Math.floor(ms.length / 2)];
+    }
+    let triggered = 0;
+    for (const b of ready) {
+      const cells = b.cells, n = cells.length;
+      let ch = 0;
+      for (let j = 0; j < n; j++) if (Math.abs(sm[cells[j]] - b.ref[j] - gshift) > thr) ch++;
+      b.cov = n ? ch / n : 0;
+      if (b.cov >= need) {
+        if (b.since === null) b.since = now;
+        triggered++;
+        if (now < quietUntil) b.wait = true;
+      } else {
+        b.since = null;
+        if (b.cov < need / 2) {                    // tenang: ikut perubahan cahaya perlahan-lahan
+          b.wait = false;
+          for (let j = 0; j < n; j++) b.ref[j] += 0.05 * (sm[cells[j]] - b.ref[j]);
+        }
+      }
+    }
+    if (!panel.hidden || now < quietUntil) return;
+    // Hampir semua belon berubah serentak = cahaya berubah atau badan menutup tayangan, bukan sentuhan
+    if (ready.length >= 3 && triggered >= Math.max(3, ready.length - 1)) { rearm(); return; }
+    let best = null;
+    for (const L of lanes) {
+      const b = L.b;
+      if (b && b.ref && !b.wait && b.since !== null && now - b.since >= S.hold && (!best || b.cov > best.b.cov)) best = L;
+    }
+    if (best) hitBalloon(best);
+  }
+
+  function loopVideo() {
+    if (loopVideo.on) return; loopVideo.on = true;
+    if ('requestVideoFrameCallback' in HTMLVideoElement.prototype) {
+      const cb = () => { processFrame(); vid.requestVideoFrameCallback(cb); };
+      vid.requestVideoFrameCallback(cb);
+    } else {
+      let last = -1;
+      setInterval(() => { if (vid.currentTime !== last) { last = vid.currentTime; processFrame(); } }, 16);
+    }
+  }
+
+  // ---------- Logik permainan ----------
+  const live = () => lanes.filter(L => L.b).map(L => L.b);
+  const rand = a => a[Math.floor(Math.random() * a.length)];
+
+  function spawn(i) {
+    const r = radius(), used = new Set(live().map(b => b.letter[0]));
+    const pool = LETTERS.filter(l => !used.has(l[0]));
+    const x = (W / lanes.length) * (i + .5);
+    const y = HH + r * 1.25 + Math.random() * Math.max(0, H - HH - r * 2.9);
+    const cr = r * 0.6, cells = [];                // sel grid dalam teras (tengah) belon
+    const x0 = Math.max(0, Math.floor((x - cr) / W * GW)), x1 = Math.min(GW - 1, Math.ceil((x + cr) / W * GW));
+    const y0 = Math.max(0, Math.floor((y - cr) / H * GH)), y1 = Math.min(GH - 1, Math.ceil((y + cr) / H * GH));
+    for (let gy = y0; gy <= y1; gy++) for (let gx = x0; gx <= x1; gx++) {
+      const px = (gx + .5) / GW * W - x, py = (gy + .5) / GH * H - y;
+      if (px * px + py * py <= cr * cr) cells.push(gy * GW + gx);
+    }
+    lanes[i].b = { letter: rand(pool), x, y, r, c: rand(WARNA), cells, ref: null,
+                   readyAt: performance.now() + SETTLE, since: null, cov: 0, wait: false, badUntil: 0 };
+  }
+  function newTarget() {
+    const others = live().map(b => b.letter).filter(l => l !== target);
+    if (others.length) target = rand(others);
+  }
+  function resetGame() {
+    score = streak = 0; shards = [];
+    lanes = Array.from({ length: S.lanes }, () => ({ b: null, next: 0 }));
+    lanes.forEach((_, i) => spawn(i));
+    target = rand(live()).letter;
+    quietUntil = performance.now() + SETTLE;
+  }
+  function hitBalloon(L) {
+    const b = L.b, now = performance.now(); if (!b) return;
+    quietUntil = now + 900;
+    if (b.letter === target) {
+      for (let i = 0; i < 12; i++) {
+        const a = Math.PI * 2 * i / 12 + Math.random() * .4, sp = b.r * (2.5 + Math.random() * 2);
+        shards.push({ x: b.x, y: b.y, vx: Math.cos(a) * sp, vy: Math.sin(a) * sp, t: 0, c: b.c, s: b.r * .14 });
+      }
+      L.b = null; L.next = now + 1500;             // belon baharu selepas tangan/bola beredar
+      score += 10; streak++; newTarget(); sound('betul');
+    } else {
+      b.badUntil = now + 700; b.wait = true; b.since = null;   // mesti dilepaskan dahulu sebelum boleh kena lagi
+      streak = 0; sound('salah');
+    }
+  }
+  function sound(kind) {
+    if (!ac) return;
+    const t = ac.currentTime;
+    const tone = (f, at, dur, type) => {
+      const o = ac.createOscillator(), gn = ac.createGain();
+      o.type = type; o.frequency.value = f;
+      gn.gain.setValueAtTime(0.35, t + at); gn.gain.exponentialRampToValueAtTime(0.001, t + at + dur);
+      o.connect(gn).connect(ac.destination); o.start(t + at); o.stop(t + at + dur);
+    };
+    if (kind === 'betul') { tone(660, 0, .15, 'sine'); tone(880, .1, .15, 'sine'); tone(1320, .2, .25, 'sine'); }
+    else { tone(200, 0, .25, 'sawtooth'); tone(150, .12, .3, 'sawtooth'); }
+  }
+
+  function update(dt, now) {
+    lanes.forEach((L, i) => { if (!L.b && now >= L.next) spawn(i); });
+    shards = shards.filter(s => (s.t += dt) < 0.4);
+    shards.forEach(s => { s.x += s.vx * dt; s.y += s.vy * dt; });
+  }
+
+  // ---------- Lukisan ----------
+  function draw(now) {
+    g.fillStyle = '#102C54'; g.fillRect(0, 0, W, H);
+    g.textAlign = 'center'; g.textBaseline = 'middle';
+    for (const L of lanes) {
+      const b = L.b; if (!b) continue;
+      const bad = now < b.badUntil, rx = b.r * .88;
+      g.strokeStyle = 'rgba(200,215,235,.8)'; g.lineWidth = 3;
+      g.beginPath(); g.moveTo(b.x, b.y + b.r); g.lineTo(b.x, b.y + b.r * 1.5); g.stroke();
+      g.fillStyle = bad ? '#EB5757' : b.c;
+      g.beginPath(); g.moveTo(b.x, b.y + b.r * .95); g.lineTo(b.x - b.r * .12, b.y + b.r * 1.12); g.lineTo(b.x + b.r * .12, b.y + b.r * 1.12); g.fill();
+      g.beginPath(); g.ellipse(b.x, b.y, rx, b.r, 0, 0, Math.PI * 2); g.fill();
+      g.fillStyle = '#14203A'; g.font = '600 ' + Math.floor(b.r * 0.95) + 'px ' + JAWI_FONT;
+      g.fillText(b.letter[1], b.x, b.y);
+      // Gelang putih di tepi belon: menunjukkan kamera sedang mengesan sesuatu pada belon ini
+      if (b.ref && b.cov > 0.02 && panel.hidden) {
+        g.strokeStyle = '#FFFFFF'; g.lineWidth = Math.max(4, b.r * .06); g.lineCap = 'round';
+        g.beginPath(); g.ellipse(b.x, b.y, rx * 1.08, b.r * 1.08, 0, -Math.PI / 2, -Math.PI / 2 + Math.PI * 2 * Math.min(1, b.cov / (S.frac / 100)));
+        g.stroke();
+      }
+    }
+    for (const s of shards) {
+      g.globalAlpha = 1 - s.t / 0.4; g.fillStyle = s.c;
+      g.beginPath(); g.arc(s.x, s.y, s.s, 0, Math.PI * 2); g.fill();
+    }
+    g.globalAlpha = 1;
+
+    // Bar soalan
+    g.fillStyle = '#0A1E3C'; g.fillRect(0, 0, W, HH);
+    g.fillStyle = '#FFFFFF'; g.textBaseline = 'top';
+    g.font = '600 ' + Math.floor(H * .04) + 'px ' + UI_FONT;
+    g.textAlign = 'left'; g.fillText('Markah: ' + score, W * .03, H * .02);
+    g.textAlign = 'right'; g.fillText('Berturut-turut: ' + streak, W * .97, H * .02);
+    // Status kamera: supaya jelas sama ada pengesanan sedang berjalan
+    const st = !vid.srcObject ? ['Kamera belum hidup: tekan T', '#FF8A80']
+             : !mapReady ? ['Penjuru belum ditanda: tekan T', '#FF8A80']
+             : ['Kamera aktif', '#7CE3A1'];
+    g.font = '600 ' + Math.floor(H * .028) + 'px ' + UI_FONT;
+    g.textAlign = 'center'; g.fillStyle = st[1]; g.fillText(st[0], W / 2, H * .022);
+
+    const qs = Math.floor(H * .085), y = HH * .66;
+    g.textBaseline = 'middle'; g.textAlign = 'left';
+    const parts = [['Sentuh huruf ' + target[0] + ' (', UI_FONT, '#FFFFFF'], [target[1], JAWI_FONT, '#FFC93C'], [')', UI_FONT, '#FFFFFF']];
+    let total = 0;
+    parts.forEach(p => { g.font = '700 ' + qs + 'px ' + p[1]; p[3] = g.measureText(p[0]).width; total += p[3]; });
+    let x = (W - total) / 2;
+    parts.forEach(p => { g.font = '700 ' + qs + 'px ' + p[1]; g.fillStyle = p[2]; g.fillText(p[0], x, y); x += p[3]; });
+
+    if (marker && now - marker.t < 500) {
+      g.strokeStyle = '#FFC93C'; g.lineWidth = 6; g.beginPath(); g.arc(marker.x, marker.y, 34, 0, Math.PI * 2); g.stroke();
+    }
+    if (!panel.hidden) {                           // bingkai dan nombor penjuru untuk kalibrasi
+      g.strokeStyle = '#FFFFFF'; g.lineWidth = 12; g.strokeRect(6, 6, W - 12, H - 12);
+      g.fillStyle = '#FFFFFF'; g.textAlign = 'center'; g.font = '800 ' + Math.floor(H * .09) + 'px ' + UI_FONT;
+      const m = H * .08;
+      g.fillText('1', m, m); g.fillText('2', W - m, m); g.fillText('3', W - m, H - m); g.fillText('4', m, H - m);
+    }
+  }
+
+  function drawPreview() {
+    const w = pv.width, h = pv.height;
+    if (vid.readyState >= 2) pg.drawImage(vid, 0, 0, w, h);
+    else { pg.fillStyle = '#0b1a2c'; pg.fillRect(0, 0, w, h); }
+    const c = S.corners;
+    if (c.length) {
+      pg.strokeStyle = '#FFC93C'; pg.lineWidth = 2; pg.beginPath();
+      c.forEach((p, i) => i ? pg.lineTo(p.x * w, p.y * h) : pg.moveTo(p.x * w, p.y * h));
+      if (c.length === 4) pg.closePath();
+      pg.stroke();
+      pg.font = '700 14px sans-serif'; pg.textAlign = 'center'; pg.textBaseline = 'middle';
+      c.forEach((p, i) => {
+        pg.fillStyle = '#FFC93C'; pg.beginPath(); pg.arc(p.x * w, p.y * h, 10, 0, Math.PI * 2); pg.fill();
+        pg.fillStyle = '#0E2440'; pg.fillText(i + 1, p.x * w, p.y * h);
+      });
+    }
+  }
+
+  let lastT = performance.now();
+  function frame(now) {
+    const dt = Math.min(0.05, (now - lastT) / 1000); lastT = now;
+    update(dt, now); draw(now);
+    if (!panel.hidden) drawPreview();
+    requestAnimationFrame(frame);
+  }
+
+  // ---------- Kawalan ----------
+  const sliders = [['thr', 'oThr'], ['frac', 'oFrac'], ['hold', 'oHold'], ['lanes', 'oLanes']];
+  function syncSliders() { sliders.forEach(([k, o]) => { $(k).value = S[k]; $(o).textContent = S[k]; }); }
+  sliders.forEach(([k, o]) => $(k).addEventListener('input', e => {
+    S[k] = +e.target.value; $(o).textContent = S[k]; simpan();
+    if (k === 'lanes') resetGame();
+  }));
+
+  pv.addEventListener('click', e => {
+    if (!vid.srcObject || S.corners.length >= 4) return;
+    const r = pv.getBoundingClientRect();
+    S.corners.push({ x: (e.clientX - r.left) / r.width, y: (e.clientY - r.top) / r.height });
+    if (S.corners.length === 4) { buildMap(); simpan(); }
+    setStatus();
+  });
+  $('btnReset').onclick = () => { S.corners = []; mapReady = false; simpan(); setStatus(); };
+  $('btnCam').onclick = startCam;
+  function closePanel() { panel.hidden = true; rearm(); quietUntil = performance.now() + SETTLE + 400; }
+  $('btnMula').onclick = () => {
+    if (!ac) { try { ac = new (window.AudioContext || window.webkitAudioContext)(); } catch (e) {} }
+    resetGame(); closePanel();
+    if (!document.fullscreenElement && document.documentElement.requestFullscreen)
+      document.documentElement.requestFullscreen().catch(() => {});
+  };
+  document.addEventListener('fullscreenchange', () => { rearm(); quietUntil = performance.now() + SETTLE + 400; });
+
+  game.addEventListener('pointerdown', e => {      // klik tetikus = sentuhan, untuk ujian
+    if (!panel.hidden) return;
+    marker = { x: e.clientX, y: e.clientY, t: performance.now() };
+    let best = null, bd = Infinity;
+    for (const L of lanes) {
+      const b = L.b; if (!b) continue;
+      const d = Math.hypot(e.clientX - b.x, e.clientY - b.y);
+      if (d < b.r && d < bd) { best = L; bd = d; }
+    }
+    if (best) { hitBalloon(best); if (best.b) best.b.wait = false; quietUntil = 0; }
+  });
+
+  addEventListener('keydown', e => {
+    const k = e.key.toLowerCase();
+    if (k === 't') { if (panel.hidden) panel.hidden = false; else closePanel(); }
+    else if (k === 'f') { document.fullscreenElement ? document.exitFullscreen() : document.documentElement.requestFullscreen().catch(() => {}); }
+    else if (k === 'r') { resetGame(); }
+    else if (k === '[') { S.thr = Math.max(8, S.thr - 2); syncSliders(); simpan(); }
+    else if (k === ']') { S.thr = Math.min(90, S.thr + 2); syncSliders(); simpan(); }
+  });
+
+  syncSliders(); resize(); requestAnimationFrame(frame);
+  if (document.fonts && document.fonts.load) document.fonts.load('600 40px "Noto Naskh Arabic"', 'ب').catch(() => {});
+})();
+</script>
+</body>
+</html>
