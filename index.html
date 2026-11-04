@@ -380,6 +380,9 @@
   .tahap{display:inline-block;border-radius:999px;padding:2px 10px;font-weight:700;font-size:.8rem;white-space:nowrap}
   .tahap.t1{background:#DDF6F1;color:#11766A}.tahap.t2{background:#FFF1C9;color:#8A5A00}.tahap.t3{background:#FFE0D9;color:#B2361F}.tahap.t0{background:#EEE;color:#777}
   .mini{display:inline-block;width:70px;height:10px;border-radius:5px;background:var(--lembut);border:1px solid var(--coklat);overflow:hidden;vertical-align:middle;margin-right:6px}.mini i{display:block;height:100%}
+
+  .simpanSt{margin:10px 0 4px;font-weight:700;font-size:.9rem;border-radius:12px;padding:6px 12px;background:#DDF6F1;color:#11766A;display:inline-block}
+  .simpanSt.amaran{background:#FFE0D9;color:#B2361F}
 </style>
 </head>
 <body>
@@ -582,13 +585,14 @@
         <input type="text" id="kNamaBaru" placeholder="Nama kelas baharu, contoh: 1 Bestari" aria-label="Nama kelas baharu" style="flex:1 1 220px;margin:0">
         <button id="kBaharu" class="hijau">➕ Cipta kelas</button>
       </div>
+      <p class="simpanSt" id="kSimpanSt"></p>
       <p class="nota" id="kTiada">Belum ada kelas. Tulis nama kelas di atas dan tekan "Cipta kelas".</p>
       <div id="kEdit" hidden>
         <label for="kNamaKelas">Nama kelas</label>
         <input type="text" id="kNamaKelas">
         <label for="kTampal">Tambah murid: satu nama setiap baris. Tambah <b>L</b> atau <b>P</b> di hujung untuk jantina (boleh tampal terus dari Excel).</label>
         <textarea id="kTampal" rows="5" placeholder="Ahmad Danial L&#10;Nur Aisyah P&#10;Muhammad Haziq L"></textarea>
-        <div class="baris"><button id="kTambahMurid" class="hijau">➕ Tambah ke senarai</button><span class="nota" id="kNota"></span></div>
+        <div class="baris"><button id="kTambahMurid" class="hijau">➕ Tambah ke senarai</button><span class="nota" id="kmNota"></span></div>
         <h3 style="margin-top:18px">Senarai murid <small id="kRingkas" class="nota"></small></h3>
         <p class="nota">Nombor di kiri ialah nombor kad jawapan murid itu.</p>
         <div id="kJadual"></div>
@@ -603,6 +607,14 @@
         <label class="tanda"><input type="checkbox" id="kadNama"> Semasa dedah jawapan, tunjuk betul/salah pada nama setiap murid</label>
         <div class="baris" style="margin-top:18px"><button id="kPadamKelas" class="bahaya">🗑 Padam kelas ini</button></div>
       </div>
+      <h3 style="margin-top:22px">💾 Sandaran dan pindah ke peranti lain</h3>
+      <p class="nota">Kelas, murid, permainan dan rekod jawapan disimpan automatik dalam pelayar ini. Simpan fail sandaran untuk berjaga-jaga, atau untuk membuka data yang sama di laptop atau tablet lain.</p>
+      <div class="baris">
+        <button id="kSandar" class="hijau">💾 Simpan fail sandaran</button>
+        <button id="kPulih">📂 Buka fail sandaran</button>
+        <input type="file" id="kPulihFail" accept=".json,application/json" hidden>
+      </div>
+      <p class="nota" id="kSandarNota"></p>
     </div>
 
     <div class="kad" id="tAnalisis">
@@ -850,7 +862,7 @@
 
   // ---------- Simpanan dalam pelayar ----------
   const KEY = 'baling-jawi-v4';
-  const S = { thr: 30, frac: 30, hold: 60, slots: 5, goal: 5, cara: 'sentuh', suara: true, mod: 'individu', bilKump: 2, namaKump: '', pusingan: 5, masa: 60, ai: false, kesan: '', ofx: 0, ofy: 0, titik: 'belok', kalibSaiz: null, zon: 5, gelap: false, bunyi: true, muzik: false, kira: true, keputusan: true, maskot: true, wizSiap: false, maksOrang: 1, jarak: 'auto', kelas: [], kelasPilih: '', lp: false, kadBil: 10, kadNama: false, corners: [], games: CONTOH, pilih: 'c1' };
+  const S = { thr: 30, frac: 30, hold: 60, slots: 5, goal: 5, cara: 'sentuh', suara: true, mod: 'individu', bilKump: 2, namaKump: '', pusingan: 5, masa: 60, ai: false, kesan: '', ofx: 0, ofy: 0, titik: 'belok', kalibSaiz: null, zon: 5, gelap: false, bunyi: true, muzik: false, kira: true, keputusan: true, maskot: true, wizSiap: false, maksOrang: 1, jarak: 'auto', balik: false, kelas: [], kelasPilih: '', lp: false, kadBil: 10, kadNama: false, corners: [], games: CONTOH, pilih: 'c1' };
   try {
     for (const k of ['baling-jawi-v2', 'baling-jawi-v3']) {       // kekalkan penjuru versi lama
       const lama = JSON.parse(localStorage.getItem(k) || '{}');
@@ -863,7 +875,10 @@
   if (!['tanda', 'ai', 'ir', 'tutup'].includes(S.kesan)) S.kesan = S.ai ? 'ai' : 'tanda';
   S.ai = S.kesan === 'ai';
   if (!S.v6) { S.hold = 60; S.v6 = true; }          // nilai lalai baharu: tindak balas lebih pantas
-  const simpan = () => { try { localStorage.setItem(KEY, JSON.stringify(S)); } catch (e) {} };
+  let simpanOk = true;                               // false jika pelayar tidak membenarkan simpanan (mod peribadi, pratonton terbenam)
+  const simpan = () => { try { localStorage.setItem(KEY, JSON.stringify(S)); simpanOk = true; } catch (e) { simpanOk = false; } };
+  try { localStorage.setItem('gerak-uji', '1'); simpanOk = localStorage.getItem('gerak-uji') === '1'; localStorage.removeItem('gerak-uji'); } catch (e) { simpanOk = false; }
+  try { if (navigator.storage && navigator.storage.persist) navigator.storage.persist().catch(() => {}); } catch (e) {}   // minta pelayar tidak memadam data secara automatik
   if (!S.v8) { if (!S.games.some(x => x.id === 'c4')) S.games.push(JSON.parse(JSON.stringify(CONTOH[3]))); S.v8 = true; simpan(); }   // tambah contoh Susun huruf untuk pengguna sedia ada
   let tetapanBuka = false, jedaMula = 0;            // panel tetapan terbuka? dan bila permainan dijeda
   const gameDipilih = () => S.games.find(x => x.id === S.pilih) || S.games[0];
@@ -1160,10 +1175,23 @@
       });
       ic.append(sg);
       if (S.kesan === 'ir' || S.kesan === 'tutup') ic.append(el('span', 'cip', S.kesan === 'ir' ? '🔦 Tirai laser IR' : 'Kaedah lama'));
+      if (S.kesan === 'ai') {
+        const ok = S.hAI && S.hAISaiz && S.hAISaiz[0] === innerWidth && S.hAISaiz[1] === innerHeight;
+        ic.append(el('span', 'cip ' + (ok ? 'ok' : 'amaran'), ok ? '👆 Sentuhan tangan dipadankan' : '⚠ Belum padan sentuhan tangan'));
+        const bk = el('button', 'pautan', ok ? 'Padan semula' : '👆 Padankan dengan sentuhan'); bk.onclick = () => { tutupSenyap(); irKalibMula(); }; ic.append(bk);
+      }
       const sedia = !!vid.srcObject && mapReady && !saizLain();
       ic.append(el('span', 'cip ' + (sedia ? 'ok' : 'amaran'), sedia ? '📷 Kamera sedia' : '⚠ Kamera belum disediakan'));
       const b = el('button', 'pautan', sedia ? 'Tetapan kamera' : 'Sediakan kamera'); b.onclick = () => sedia ? bukaTetapan('tKamera') : wizMula(); ic.append(b);
-    } else if (S.cara === 'cermin') ic.append(el('span', 'cip', 'Murid berdiri 1 hingga 3 m dari kamera'));
+    } else if (S.cara === 'cermin') {
+      ic.append(el('span', 'cip', 'Murid berdiri 1 hingga 3 m dari kamera'));
+      const sg = el('div', 'segmen');
+      [[false, '🪞 Kamera hadap murid'], [true, '🧱 Kamera hadap dinding']].forEach(([v, t]) => {
+        const b = el('button', !!S.balik === v ? 'dipilih' : '', t); b.title = v ? 'Kamera di belakang murid, menghala ke dinding/skrin: tiada cermin' : 'Kamera di depan, menghadap murid: gambar dicerminkan';
+        b.onclick = () => { S.balik = v; simpan(); ai.jejak = []; renderCara(); }; sg.append(b);
+      });
+      ic.append(sg, el('span', 'cip', 'Jika sentuh kanan tetapi huruf kiri dipilih, tukar pilihan ini (atau tekan M semasa bermain)'));
+    }
     else if (S.cara === 'kad') {
       const k = kelasDipilih();
       ic.append(el('span', 'cip ' + (k ? 'ok' : 'amaran'), k ? '📇 ' + k.murid.length + ' kad · ' + S.kadBil + ' soalan' : '⚠ Pilih kelas dahulu'));
@@ -1614,26 +1642,38 @@
   }
   const applyH = (h, x, y) => { const w = h[6] * x + h[7] * y + h[8]; return [(h[0] * x + h[1] * y + h[2]) / w, (h[3] * x + h[4] * y + h[5]) / w]; };
 
+  const titikKalib = () => {                          // titik sentuhan semasa (koordinat kamera 0..1)
+    if (S.kesan === 'ir') return irBlobs[0] || null;
+    const t = ai.raw.filter(p => p.jenis === 'tangan' && p.aktif).sort((a, b) => a.y - b.y)[0];   // tangan yang paling tinggi
+    return t && performance.now() - ai.t < 300 ? t : null;
+  };
   function irKalibMula() {
-    if (!vid.srcObject) { kamNota('Hidupkan kamera inframerah dahulu.'); return; }
+    if (!vid.srcObject) { kamNota(S.kesan === 'ir' ? 'Hidupkan kamera inframerah dahulu.' : 'Hidupkan kamera dahulu (langkah A).'); return; }
+    if (S.kesan === 'ai') aiMuat();
     tutupSenyap(); Object.assign(irK, { aktif: true, i: 0, pts: [], tahan: null, lepas: true });
     uji.aktif = false; papan.aktif = false; home.hidden = true; gear.hidden = false; ulang.hidden = true;
     const de = document.documentElement;
     if (!document.fullscreenElement && de.requestFullscreen) de.requestFullscreen().catch(() => {});
   }
   function irKalibLangkah(now) {
-    const b = irBlobs[0];
+    const b = titikKalib();
     if (irK.lepas) { if (!b) irK.lepas = false; return; }                // tunggu jari dilepaskan
     if (!b) { irK.tahan = null; return; }
     const t = irK.tahan;
     if (!t || Math.hypot(b.x - t.x / t.n, b.y - t.y / t.n) > 0.03) { irK.tahan = { t: now, x: b.x, y: b.y, n: 1 }; return; }
     t.x += b.x; t.y += b.y; t.n++;
-    if (now - t.t < 700) return;
+    if (now - t.t < (S.kesan === 'ir' ? 700 : 1000)) return;
     irK.pts.push([t.x / t.n, t.y / t.n]); irK.tahan = null; irK.lepas = true; irK.i++; sound('betul');
     if (irK.i < 4) return;
+    irK.aktif = false;
+    if (S.kesan === 'ai') {                           // tangan: simpan homografi kamera -> skrin khas untuk hujung jari
+      const ha = solveH(irK.pts, IRK_PT), uji2 = ha && irK.pts.map(([x, y]) => applyH(ha, x, y));
+      if (!ha || uji2.some(([x, y]) => !isFinite(x) || !isFinite(y))) { goHome(); kamNota('Padanan sentuhan gagal. Cuba lagi: sentuh tepat di tengah setiap bulatan dan tahan sehingga berbunyi.'); return; }
+      S.hAI = ha; S.hAISaiz = [innerWidth, innerHeight]; S.ofx = 0; S.ofy = 0; syncSliders(); simpan(); goHome();
+      kamNota('✅ Padanan sentuhan tangan selesai. Sentuhan kini dipadankan terus dengan tempat jari menyentuh dinding.'); renderCara(); return;
+    }
     const h = solveH(IRK_PT, irK.pts);                // skrin -> kamera
     const c = h && [[0, 0], [1, 0], [1, 1], [0, 1]].map(([u, v]) => applyH(h, u, v));
-    irK.aktif = false;
     if (!c || c.some(([x, y]) => !isFinite(x) || x < -1 || x > 2 || y < -1 || y > 2)) { goHome(); kamNota('Padanan gagal: titik sentuhan tidak konsisten. Cuba lagi, sentuh tepat di tengah setiap bulatan.'); return; }
     S.corners = c.map(([x, y]) => ({ x, y })); S.kalibSaiz = [innerWidth, innerHeight];
     buildMap(); simpan(); goHome();
@@ -1655,7 +1695,12 @@
     g.fillStyle = '#FFFFFF'; g.font = '700 ' + Math.floor(H * .045) + 'px ' + FON;
     g.fillText('Sentuh tengah bulatan ' + Math.min(4, irK.i + 1) + ' dan tahan sehingga berbunyi', W / 2, H * .45);
     g.font = '500 ' + Math.floor(H * .03) + 'px ' + FON;
-    g.fillText(irK.lepas && irBlobs.length ? 'Alihkan jari dari dinding dahulu' : irBlobs.length ? 'Titik cahaya dikesan' : 'Menunggu titik cahaya...', W / 2, H * .53);
+    const ada = !!titikKalib(), ir = S.kesan === 'ir';
+    g.fillText(irK.lepas && ada ? 'Turunkan tangan dahulu' : ada ? (ir ? 'Titik cahaya dikesan' : '✋ Tangan dikesan: tahan...') : ir ? 'Menunggu titik cahaya...' : 'Menunggu tangan... (berdiri di sisi supaya badan tidak menutup bulatan)', W / 2, H * .53);
+    if (!ir) for (const p of ai.raw.filter(q => q.jenis === 'tangan')) {    // tunjuk di mana jari dikesan sekarang (sebelum padanan)
+      const s = aiKeSkrin(p.x, p.y); if (!s) continue;
+      g.fillStyle = p.aktif ? '#FFD23F' : '#888'; g.beginPath(); g.arc(s.x, s.y, H * .015, 0, 7); g.fill();
+    }
   }
   function irLukisPratonton(w, h) {                   // titik cahaya pada gambar kamera
     if (S.kesan !== 'ir') return;
@@ -2169,7 +2214,7 @@
     const cermin = S.cara === 'cermin' && vid.readyState >= 2;
     if (cermin) {                                     // latar = video murid, diterbalikkan seperti cermin
       const c = cerminRect();
-      g.save(); g.translate(W, 0); g.scale(-1, 1); g.drawImage(vid, c.ox, c.oy, c.dw, c.dh); g.restore();
+      g.save(); if (!S.balik) { g.translate(W, 0); g.scale(-1, 1); } g.drawImage(vid, c.ox, c.oy, c.dw, c.dh); g.restore();
       if (lawan() && teams.length === 2) {
         g.globalAlpha = .16; g.fillStyle = teams[0].warna; g.fillRect(0, HH, W / 2, H - HH);
         g.fillStyle = teams[1].warna; g.fillRect(W / 2, HH, W / 2, H - HH); g.globalAlpha = 1;
@@ -2443,7 +2488,7 @@
         const x = lm[8].x * PW, y = lm[8].y * PH, w = Hinv[6] * x + Hinv[7] * y + Hinv[8];
         u = (Hinv[0] * x + Hinv[1] * y + Hinv[2]) / w; v = (Hinv[3] * x + Hinv[4] * y + Hinv[5]) / w;
       } else {                                        // kamera hadap pengguna: cermin, dengan sedikit jidar
-        u = (1 - lm[8].x - 0.12) / 0.76; v = (lm[8].y - 0.12) / 0.76;
+        u = ((S.balik ? lm[8].x : 1 - lm[8].x) - 0.12) / 0.76; v = (lm[8].y - 0.12) / 0.76;
       }
       if (u > -0.05 && u < 1.05 && v > -0.05 && v < 1.05) p = { x: Math.min(1, Math.max(0, u)) * W, y: Math.min(1, Math.max(0, v)) * H };
     }
@@ -2640,8 +2685,9 @@
 
   const bilTangan = () => Math.min(4, Math.max(S.maksOrang || 1, lawan() ? 2 : 1));   // seperti cvzone maxHands: 1 murid = 1 tangan
   function tanganKemaskini() { try { if (ai.hl && ai.hl.setOptions && ai.hlN !== bilTangan()) { ai.hlN = bilTangan(); ai.hl.setOptions({ numHands: ai.hlN }); } } catch (e) {} }
-  const tanganDekat = () => S.cara === 'cermin' && S.jarak !== 'jauh';     // model tangan: paling licin dalam jarak 2.5 m
-  const badanPerlu = () => !(S.cara === 'cermin' && S.jarak === 'dekat');  // model badan: murid jauh, atau sentuh dinding
+  const modTangan = () => S.cara === 'cermin' || (S.cara === 'kamera' && S.kesan === 'ai');
+  const tanganDekat = () => modTangan() && S.jarak !== 'jauh';             // model tangan: paling licin dalam jarak 2.5 m
+  const badanPerlu = () => !(modTangan() && S.jarak === 'dekat');          // model badan: murid jauh (sandaran)
   async function aiMuat() {
     if (ai.memuat || ((!tanganDekat() || ai.hl) && (!badanPerlu() || ai.pl))) return;
     ai.memuat = true; ai.ralat = ''; $('aiStatus').textContent = 'Memuatkan model AI (kali pertama mengambil masa)...';
@@ -2671,7 +2717,11 @@
     : !(ai.hl || ai.pl) ? ['Memuatkan pengecam tangan...', '#C77700'] : ['● ' + ai.orang + (ai.sumber === 'badan' ? ' orang' : ' tangan') + ' dikesan · ' + ai.fps + ' fps · kamera ' + kamFps() + ' fps', ai.fps && ai.fps < 20 ? '#C77700' : '#1F9E68'];
   const kamFps = () => { try { const s = vid.srcObject.getVideoTracks()[0].getSettings(); return Math.round(s.frameRate || 0); } catch (e) { return 0; } };
   function aiKeSkrin(nx, ny) {                        // koordinat kamera (0..1) -> piksel skrin, melalui kalibrasi
-    if (S.cara === 'cermin') { const c = cerminRect(); return { x: W - (c.ox + nx * c.dw), y: c.oy + ny * c.dh }; }
+    if (S.cara === 'cermin') { const c = cerminRect(), x = c.ox + nx * c.dw; return { x: S.balik ? x : W - x, y: c.oy + ny * c.dh }; }
+    if (S.cara === 'kamera' && S.kesan === 'ai' && S.hAI && S.hAISaiz && S.hAISaiz[0] === innerWidth && S.hAISaiz[1] === innerHeight) {
+      const [u, v] = applyH(S.hAI, nx, ny);
+      return (u < -0.1 || u > 1.1 || v < -0.1 || v > 1.1) ? null : { x: u * W + S.ofx / 100 * W, y: v * H + S.ofy / 100 * H };
+    }
     if (!mapReady || !Hinv) return null;
     const x = nx * PW, y = ny * PH, w = Hinv[6] * x + Hinv[7] * y + Hinv[8];
     const u = (Hinv[0] * x + Hinv[1] * y + Hinv[2]) / w, v = (Hinv[3] * x + Hinv[4] * y + Hinv[5]) / w;
@@ -2682,6 +2732,7 @@
   // Jika tiada tangan dikesan seketika (murid berdiri jauh), model badan digunakan sebagai sandaran.
   function aiLangkahTangan(now) {
     if (vid.readyState < 2 || vid.currentTime === ai.vt) return;
+    if (ai.pl && S.jarak !== 'dekat' && now - ai.tanganT > 700 && (ai.k3 = (ai.k3 || 0) + 1) % 4) { ai.sumber = 'badan'; return aiLangkahBadan(now); }
     ai.vt = vid.currentTime;
     let lms = [];
     try { lms = ai.hl.detectForVideo(vid, now).landmarks || []; } catch (e) { return; }
@@ -2690,15 +2741,18 @@
     ai.sumber = 'tangan';
     const K = bilTangan();
     const d = (lm, i, j) => Math.hypot(lm[i].x - lm[j].x, lm[i].y - lm[j].y);
-    const pts = lms.slice(0, K).map(lm => ({ x: lm[8].x, y: lm[8].y,
+    const dinding = S.cara === 'kamera';
+    const hujung = lm => dinding ? [4, 8, 12, 16, 20].reduce((a, t) => d(lm, 0, t) > d(lm, 0, a) ? t : a, 8) : 8;
+    const pts = lms.slice(0, K).map(lm => ({ x: lm[hujung(lm)].x, y: lm[hujung(lm)].y,
       // AKTIF = jari telunjuk diluruskan dan tidak menghala ke bawah (tangan yang tergantung di sisi badan diabaikan)
-      aktif: d(lm, 0, 8) > d(lm, 0, 6) * 1.1 && lm[8].y < lm[0].y + 0.03 }));
+      aktif: dinding ? lm[hujung(lm)].y < lm[0].y + 0.03 : d(lm, 0, 8) > d(lm, 0, 6) * 1.1 && lm[8].y < lm[0].y + 0.03 }));
     const jj = jejakKemaskini(pts, now);
     ai.raw = jj.map(j => ({ x: j.x, y: j.y, jenis: 'tangan', aktif: j.aktif }));
     aiSelesai(now, lms.length);
   }
   function aiSelesai(now, orang) {
     ai.orang = orang; ai.t = now; if (orang) ai.orangT = now;
+    if (irK.aktif && S.kesan === 'ai') { irKalibLangkah(now); return; }
     ai.jari = ai.raw.filter(p => p.jenis === 'tangan' && p.aktif).map(p => aiKeSkrin(p.x, p.y)).filter(Boolean);
     ai.bolaPts = ai.raw.filter(p => p.jenis === 'bola').map(p => aiKeSkrin(p.x, p.y)).filter(Boolean);
     ai.n++; if (now - ai.t0 >= 1000) { ai.fps = Math.round(ai.n * 1000 / (now - ai.t0)); ai.n = 0; ai.t0 = now; }
@@ -2770,7 +2824,7 @@
       if (b.aiSince === null) b.aiSince = now;
       if (lawan() && now < sideQuiet[s.side]) continue;
       if (b.wait && now < b.waitUntil) continue;
-      if (now - b.aiSince >= (S.cara === 'cermin' ? 400 : Math.max(250, S.hold)) && d < bd) { best = s; bd = d; }
+      if (now - b.aiSince >= (S.cara === 'cermin' ? 400 : ai.sumber === 'tangan' ? 180 : Math.max(250, S.hold)) && d < bd) { best = s; bd = d; }
     }
     if (best) { const b = best.b; hitTarget(best); if (best.b === b) { b.aiSince = null; b.aiSedia = false; } }
   }
@@ -2799,7 +2853,8 @@
   };
   function setKesan() {
     S.ai = S.kesan === 'ai'; $('kesan').value = S.kesan; $('aiStatus').textContent = NOTA_KESAN[S.kesan];
-    $('btnAuto').hidden = S.kesan === 'ir'; $('btnIrKalib').hidden = S.kesan !== 'ir'; irBg = null;
+    $('btnAuto').hidden = S.kesan === 'ir'; $('btnIrKalib').hidden = S.kesan !== 'ir' && S.kesan !== 'ai'; irBg = null;
+    $('btnIrKalib').textContent = S.kesan === 'ai' ? '👆 Padankan dengan sentuhan tangan (paling tepat)' : '👆 Padankan dengan sentuhan';
     if (S.ai || S.cara === 'cermin') aiMuat(); else { ai.jari = []; ai.bolaPts = []; ai.raw = []; }
     jejak = [[], []]; rearm();
   }
@@ -3669,6 +3724,10 @@
     hp.value = S.kelasPilih || ''; sel.value = S.kelasPilih || (S.kelas[0] && S.kelas[0].id) || '';
     const k = S.kelas.find(x => x.id === sel.value);
     $('kTiada').hidden = !!S.kelas.length; $('kEdit').hidden = !k; sel.hidden = !S.kelas.length;
+    const st = $('kSimpanSt');
+    st.className = 'simpanSt' + (simpanOk ? '' : ' amaran');
+    st.textContent = !simpanOk ? '⚠ Pelayar ini tidak membenarkan data disimpan (mod peribadi atau paparan pratonton). Buka GERAK melalui pautan GitHub Pages dalam Chrome, atau simpan fail sandaran.'
+      : S.kelas.length ? '✓ ' + S.kelas.length + ' kelas disimpan dalam pelayar ini. Ia akan ada apabila GERAK dibuka semula.' : '✓ Kelas yang dicipta akan disimpan automatik dalam pelayar ini.';
     if (!k) return;
     $('kNamaKelas').value = k.nama;
     const jd = $('kJadual'); jd.innerHTML = '';
@@ -3695,7 +3754,7 @@
     if (!nama) { inp.focus(); $('kTiada').hidden = false; $('kTiada').textContent = 'Tulis nama kelas dahulu, contoh: 1 Bestari.'; return; }
     const k = { id: 'k' + Date.now(), nama: nama.slice(0, 40), murid: [] };
     S.kelas.push(k); S.kelasPilih = k.id; inp.value = ''; simpan(); renderKelas(); renderCara();
-    $('kNota').textContent = 'Kelas "' + k.nama + '" dicipta. Tampal nama murid di bawah.'; $('kTampal').focus();
+    $('kmNota').textContent = 'Kelas "' + k.nama + '" dicipta dan disimpan. Tampal nama murid di bawah.'; $('kTampal').focus();
   }
   $('kBaharu').onclick = ciptaKelas;
   $('kNamaBaru').onkeydown = e => { if (e.key === 'Enter') { e.preventDefault(); ciptaKelas(); } };
@@ -3707,13 +3766,42 @@
     let n = 0;
     baru.forEach((m, i) => { if (ada.has(m.nama.toLowerCase())) return; k.murid.push({ id: 'm' + Date.now().toString(36) + i, no: noKadBebas(k), nama: m.nama, j: m.j }); n++; });
     $('kTampal').value = ''; simpan(); renderKelas(); renderCara();
-    $('kNota').textContent = n + ' murid ditambah.' + (n < baru.length ? ' ' + (baru.length - n) + ' nama sudah ada dalam senarai.' : '');
+    $('kmNota').textContent = n + ' murid ditambah.' + (n < baru.length ? ' ' + (baru.length - n) + ' nama sudah ada dalam senarai.' : '');
   };
   $('kPadamKelas').onclick = () => {
     const k = kelasDipilih(); if (!k || !sahkan('Padam kelas "' + k.nama + '" dan senarai muridnya? Rekod jawapan lama tidak dipadam.')) return;
     S.kelas = S.kelas.filter(x => x !== k); S.kelasPilih = S.kelas[0] ? S.kelas[0].id : ''; simpan(); renderKelas(); renderCara();
   };
   $('kCetak').onclick = () => cetakKad(kelasDipilih());
+  // ---------- Sandaran fail: kelas, murid, permainan dan rekod ----------
+  $('kSandar').onclick = () => {
+    const d = { jenis: 'gerak-sandaran', versi: 1, tarikh: new Date().toISOString(), kelas: S.kelas, games: S.games, rekod: LOG };
+    const t = new Date(), tt = t.getFullYear() + '-' + String(t.getMonth() + 1).padStart(2, '0') + '-' + String(t.getDate()).padStart(2, '0');
+    muatTurun(JSON.stringify(d), 'gerak-sandaran-' + tt + '.json', 'application/json');
+    $('kSandarNota').textContent = 'Fail sandaran dimuat turun: ' + S.kelas.length + ' kelas, ' + S.games.length + ' permainan, ' + LOG.length + ' rekod. Simpan di Google Drive atau pendrive.';
+  };
+  $('kPulih').onclick = () => $('kPulihFail').click();
+  $('kPulihFail').onchange = async e => {
+    const f = e.target.files[0]; e.target.value = ''; if (!f) return;
+    let d; try { d = JSON.parse(await f.text()); } catch (err) { d = null; }
+    if (!d || d.jenis !== 'gerak-sandaran' || !Array.isArray(d.kelas)) { $('kSandarNota').textContent = '⚠ Fail ini bukan fail sandaran GERAK.'; return; }
+    let nk = 0, ng = 0, nr = 0;
+    d.kelas.forEach(k => {                            // gabung: kelas sama (id) diganti dengan versi dalam fail, kelas baharu ditambah
+      if (!k || !k.id || !Array.isArray(k.murid)) return;
+      const bersihK = { id: String(k.id), nama: String(k.nama || 'Kelas').slice(0, 40), murid: k.murid.filter(m => m && m.id).map(m => ({ id: String(m.id), no: +m.no || 0, nama: String(m.nama || '').slice(0, 60), j: m.j === 'L' || m.j === 'P' ? m.j : '' })) };
+      const i = S.kelas.findIndex(x => x.id === bersihK.id); if (i >= 0) S.kelas[i] = bersihK; else S.kelas.push(bersihK); nk++;
+    });
+    (d.games || []).forEach(g => { if (g && g.id && !S.games.some(x => x.id === g.id)) { try { const b = bersih(g); b.id = g.id; S.games.push(b); ng++; } catch (err) {} } });
+    if (Array.isArray(d.rekod)) {
+      const ada = new Set(LOG.map(r => r.t + '|' + r.m + '|' + r.q + '|' + r.p));
+      d.rekod.forEach(r => { if (r && r.t && !ada.has(r.t + '|' + r.m + '|' + r.q + '|' + r.p)) { LOG.push(r); nr++; } });
+      LOG.sort((a, b) => a.t - b.t); if (LOG.length > 5000) LOG.splice(0, LOG.length - 5000);
+      try { localStorage.setItem(LOG_KEY, JSON.stringify(LOG)); } catch (err) {}
+    }
+    if (!S.kelasPilih && S.kelas[0]) S.kelasPilih = S.kelas[0].id;
+    simpan(); renderKelas(); renderGames(); renderCara();
+    $('kSandarNota').textContent = '✓ Dipulihkan: ' + nk + ' kelas, ' + ng + ' permainan baharu, ' + nr + ' rekod.';
+  };
   $('lp').checked = !!S.lp; $('lp').onchange = e => { S.lp = e.target.checked; simpan(); };
 
   // =====================================================================
@@ -5180,6 +5268,7 @@
     else if (main && k === 'g') arahan('giliran');
     else if (k === 't') { tetapanBuka ? tutupTetapan() : bukaTetapan(); }
     else if (k === 'escape' && tetapanBuka) tutupTetapan();
+    else if (k === 'm' && S.cara === 'cermin') { S.balik = !S.balik; simpan(); ai.jejak = []; renderCara(); if (home.hidden) maskotKata(S.balik ? 'Kamera hadap dinding ↔' : 'Kamera hadap murid 🪞', 'fikir', 2000); }
     else if (k === 'f') { document.fullscreenElement ? document.exitFullscreen() : document.documentElement.requestFullscreen().catch(() => {}); }
     else if (k === 'r' && home.hidden && !papan.aktif && !uji.aktif) startGame();
   });
