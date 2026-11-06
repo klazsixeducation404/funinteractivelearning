@@ -1,7 +1,7 @@
 {
-  "name": "GERAK · Fun Interactive Learning",
+  "name": "GERAK",
   "short_name": "GERAK",
-  "description": "Gamifikasi Edukasi Responsif berasaskan AI & Kinestetik. Projektor interaktif untuk kelas tanpa peranti murid.",
+  "description": "Gamified Education with Responsive AI & Kinesthetic Learning. Projektor interaktif untuk kelas tanpa peranti murid.",
   "lang": "ms",
   "start_url": "./index.html",
   "scope": "./",

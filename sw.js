@@ -1,6 +1,6 @@
 /* GERAK: pekerja perkhidmatan (service worker) untuk kegunaan luar talian.
    Hak cipta (c) 2026 ameermustaqeem@klazsixedu. */
-const VERSI = 'gerak-202611051743';
+const VERSI = 'gerak-1793939323';
 const TERAS = ['./', './index.html', './tentang.html', './manifest.webmanifest', './ikon-192.png', './ikon-512.png'];
 const LUAR = 'gerak-luar-v1';                       // perpustakaan dan model AI dari CDN (jarang berubah)
 const DOMAIN_LUAR = /(^|\.)(cdn\.jsdelivr\.net|storage\.googleapis\.com|fonts\.googleapis\.com|fonts\.gstatic\.com)$/;
